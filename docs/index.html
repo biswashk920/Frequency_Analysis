@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>floodfreq: flood frequency analysis</title>
+<style>
+:root{--bg:#eef2f1;--panel:#fff;--ink:#10252b;--mute:#566b70;--rule:#c9d6d6;--accent:#0e6b83;--warn:#9a5b00;--earth:#c9b99a;--water:#3d93b8;
+--Gumbel:#0e6b83;--GEV:#c2462e;--Lognormal:#4a7c2f;--LP3:#7a4fa3;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--serif:Georgia,"Times New Roman",serif}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1a1e;--panel:#14262b;--ink:#e3eeee;--mute:#8fa6aa;--rule:#2b4248;--accent:#4fb6d1;--warn:#e0a24a;--earth:#5b5242;--water:#4fa6cc;
+--Gumbel:#4fb6d1;--GEV:#f07a62;--Lognormal:#8fc66a;--LP3:#b48ae0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--sans);padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:1040px;margin:0 auto;padding:28px 18px 60px}
+h1{font:600 clamp(28px,5vw,40px)/1.1 var(--serif);margin:0 0 8px}
+h2{font:600 20px var(--serif);margin:34px 0 10px}
+h3{font:600 16px var(--sans);margin:0 0 8px}
+.lede{color:var(--mute);max-width:64ch;margin:0 0 24px}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:18px}
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:14px;color:var(--mute);margin:0 0 4px}
+textarea,input[type=text],select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--rule);border-radius:4px;padding:8px}
+textarea{min-height:150px;resize:vertical;font-variant-numeric:tabular-nums}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:14px;color:var(--ink);margin:4px 0 0}
+.check input{margin-top:4px}
+button{font:600 15px var(--sans);border-radius:4px;border:1px solid var(--accent);padding:9px 16px;cursor:pointer;background:var(--accent);color:#fff}
+button.ghost{background:transparent;color:var(--accent)}
+button:disabled{opacity:.6;cursor:progress}
+button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.msg{margin:12px 0 0;font-size:14px}.msg.err{color:#c2462e}.msg.warn{color:var(--warn)}.mute{color:var(--mute)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;min-width:540px}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--rule)}
+th:first-child,td:first-child,th:nth-child(2){text-align:left}
+th{font-weight:600;border-bottom:2px solid var(--ink)}
+th span.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+td small{display:block;color:var(--mute);font-size:12px}
+tr.t100 td,tr.best td{background:color-mix(in srgb,var(--accent) 10%,transparent);font-weight:600}
+#bestlist{margin:0 0 14px;padding-left:20px}#bestlist li{margin:0 0 6px}
+.plots{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.plots{grid-template-columns:1fr}}
+.plots p{margin:6px 0 0;font-size:13px;color:var(--mute)}
+canvas{width:100%;display:block}
+.plots canvas{height:290px}
+.ill-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;margin-bottom:12px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+#readout{margin:10px 0 4px;font-size:15px}
+.fine{font-size:13px;color:var(--mute);margin:6px 0 0}
+footer{margin-top:40px;font-size:13px;color:var(--mute)}
+#out{display:none}[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Flood frequency analysis</h1>
+<p class="lede">Estimate how big a flood or heavy rainstorm could be, and how often it is likely to happen. Paste your yearly highest values (one per year), and the tool shows the expected size of the 2 to 500-year events using four standard methods (Gumbel, GEV, Log Normal, Log Pearson III), tells you which fits best, and lets you download everything as an Excel workbook. It all runs in your browser: your data is never uploaded.</p>
+
+<div class="grid">
+ <div class="panel">
+  <label for="data">Annual maxima (separate with spaces, commas or new lines)</label>
+  <textarea id="data" spellcheck="false" placeholder="e.g. 520 610 480 905 730 ..."></textarea>
+  <div class="actions"><button id="run">Run analysis</button><button class="ghost" id="ex">Load example</button></div>
+  <p id="msg" class="msg" role="status"></p>
+ </div>
+ <div class="panel">
+  <div class="row"><div><label for="type">Data type</label><select id="type"><option value="discharge">Discharge (m³/s)</option><option value="rainfall">Rainfall (mm)</option></select></div>
+  <div><label for="conf">Confidence level</label><select id="conf"><option value="0.9">90%</option><option value="0.95" selected>95%</option><option value="0.99">99%</option></select></div></div>
+  <div class="row"><div><label for="station">Station name</label><input type="text" id="station" placeholder="optional"></div>
+  <div><label for="nb">Simulations</label><select id="nb"><option>500</option><option selected>1000</option><option>2000</option></select></div></div>
+  <div class="row"><div><label for="pp">Plotting position</label><select id="pp"><option value="weibull">Weibull</option><option value="cunnane">Cunnane</option><option value="gringorten">Gringorten</option></select></div><div></div></div>
+  <label class="check"><input type="checkbox" id="trend"><span>Also run the Mann-Kendall trend test (optional). Enter values in year order.</span></label>
+  <p class="msg mute">Use one value per year: the highest flow, or the highest rainfall for one fixed duration such as 24 hours. A higher confidence level gives a wider uncertainty range. Simulations are repeated test runs used to estimate that range; 1000 is fine.</p>
+ </div>
+</div>
+
+<div id="out">
+ <h2 id="ttl">Results</h2>
+ <div class="panel">
+  <h3>Which model fits best?</h3>
+  <ul id="bestlist"></ul>
+  <div class="scroll"><table id="rank"></table></div>
+  <p class="fine">AIC rewards fit and penalises extra parameters; lower is better. A ΔAIC below 2 means two models are effectively tied. KS and RMSE are shown for reference.</p>
+ </div>
+ <div class="panel" id="mkbox" hidden style="margin-top:14px"></div>
+
+ <h2>Return period estimates</h2>
+ <div class="panel scroll"><table id="tbl"></table></div>
+ <p class="msg mute">The large number is the best estimate; the smaller line beneath it is the lower and upper limit of the uncertainty range. The 100-year row is highlighted. The range reflects sampling noise within each model, not the choice between models.</p>
+ <div class="actions"><button id="xlsx">Download Excel workbook</button><button class="ghost" id="csv">Download CSV</button></div>
+
+ <h2>What a flood of this size looks like</h2>
+ <div class="panel">
+  <div class="ill-controls">
+   <div><label for="idist">Model</label><select id="idist"></select></div>
+   <div><label for="iT">Return period: <b id="iTl">100</b> years</label><input type="range" id="iT" min="0" max="7" step="1" value="5"></div>
+   <div><label for="itime">Time through the flood</label><input type="range" id="itime" min="0" max="1000" value="300"></div>
+   <div><button id="play">Play</button></div>
+  </div>
+  <canvas id="ill" role="img" aria-label="Illustration of a river cross-section and flood hydrograph"></canvas>
+  <p id="readout" aria-live="polite"></p>
+  <p class="fine">Illustration of magnitude only, not a hydraulic model. The hydrograph shape is generic, the 2-year flow is drawn at bank-full (a common rule of thumb), and water depth is scaled as flow^0.6 relative to that. Your real channel, stage and flood extent will differ.</p>
+ </div>
+
+ <h2>Frequency curves</h2>
+ <div class="plots" id="plots"></div>
+</div>
+
+<footer>Gumbel and GEV use L-moments (Hosking 1990); Log Normal uses the moments of ln x; Log Pearson III uses the moments of log10 x with the bias-corrected sample skew and the exact Pearson III distribution (no regional skew). Bands are percentile intervals from a parametric bootstrap; in tests they cover the true value somewhat less often than the nominal level, and much less often if the model is wrong. KS p-values are not shown because they are optimistic when parameters are fitted to the same data. Long return periods from short records are extrapolation. Source and Python command-line tool: <a href="https://github.com/biswashk920/Frequency_Analysis" style="color:var(--accent)">github.com/biswashk920/Frequency_Analysis</a>.</footer>
+</main>
+<script src="floodfreq.js"></script>
+<script src="xlsxmini.js"></script>
+<script>
+const $=id=>document.getElementById(id),{RP,DIST,LABEL,fmt}=FF;
+const EXAMPLE="575 1173 849 1099 1958 923 894 570 732 893 1049 1211 809 562 746 1464 694 858 1556 494 974 1665 706 931 1463 631 911 1132 1039 870 687 886 803 877 799 1273 1157 764 950 738 859 790 1027 802 863 1094 831 1453 669 1120 837 840 1005 911 832 372 592 1082 912 1067";
+const LIGHT={ink:"#10252b",mute:"#566b70",rule:"#c9d6d6",bg:"#ffffff",Gumbel:"#0e6b83",GEV:"#c2462e",Lognormal:"#4a7c2f",LP3:"#7a4fa3",font:"Arial, Helvetica, sans-serif"};
+let last=null;
+const say=(t,c)=>{const m=$("msg");m.textContent=t;m.className="msg "+(c||"")};
+const cssPal=()=>{const s=getComputedStyle(document.documentElement),v=n=>s.getPropertyValue(n).trim();return{ink:v("--ink"),mute:v("--mute"),rule:v("--rule"),bg:null,Gumbel:v("--Gumbel"),GEV:v("--GEV"),Lognormal:v("--Lognormal"),LP3:v("--LP3"),earth:v("--earth"),water:v("--water"),accent:v("--accent"),font:v("--sans")}};
+const unitName=()=>last.type==="discharge"?"m³/s":"mm";
+
+async function run(){
+ let p;try{p=FF.parseNumbers($("data").value)}catch(e){return say(e.message,"err")}
+ $("run").disabled=true;say("Fitting and bootstrapping…");
+ try{
+  const r=await FF.analyze(p.values,{conf:+$("conf").value,nboot:+$("nb").value,pp:$("pp").value,trend:$("trend").checked,onProgress:d=>say("Bootstrapping "+LABEL[d]+"…")});
+  last={r,type:$("type").value,station:$("station").value.trim()};
+  render();say(p.notes.length?"Note: "+p.notes.join("; ")+".":"");
+ }catch(e){say(e.message,"err")}
+ $("run").disabled=false;
+}
+function render(){
+ const{r,station}=last,u=unitName(),conf=Math.round(r.conf*100);
+ $("out").style.display="block";$("ttl").textContent=`Results${station?" – "+station:""} (n = ${r.n}, ${u})`;
+ $("bestlist").innerHTML="";r.summary.forEach(s=>{const li=document.createElement("li");li.textContent=s;$("bestlist").appendChild(li)});
+ const ord=[...r.rows].sort((a,b)=>(isFinite(a.AIC)?a.AIC:Infinity)-(isFinite(b.AIC)?b.AIC:Infinity)),f2=v=>isFinite(v)?v.toFixed(2):"n/a";
+ $("rank").innerHTML="<tr><th>Rank</th><th>Model</th><th>AIC</th><th>ΔAIC</th><th>Weight</th><th>KS</th><th>RMSE</th><th>100-yr</th></tr>"+
+  ord.map((s,i)=>`<tr class="${i===0&&s.support_ok?"best":""}"><td>${s.support_ok?i+1:"n/a"}</td><td><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:var(--${s.distribution})"></span>${LABEL[s.distribution]}</td><td>${f2(s.AIC)}</td><td>${f2(s.delta_AIC)}</td><td>${f2(s.akaike_weight)}</td><td>${s.KS.toFixed(3)}</td><td>${fmt(s.RMSE)}</td><td>${fmt(r.q100[s.distribution])}</td></tr>`).join("");
+ const mb=$("mkbox");
+ if(r.mk){const m=r.mk;mb.hidden=false;mb.innerHTML=`<h3>Trend screening (Mann-Kendall)</h3><p style="margin:0">${m.trend==="none"?"No significant trend":"Significant "+m.trend+" trend"} at the 5% level: S = ${m.S}, Z = ${m.Z.toFixed(2)}, p = ${m.p<0.001?"< 0.001":m.p.toFixed(3)}, Sen slope = ${m.sen_slope.toFixed(2)} ${u} per record step.</p><p class="fine">Assumes the values were entered in year order. Serial correlation is not tested.</p>`}else mb.hidden=true;
+ let h="<tr><th>Return period</th>"+DIST.map(d=>`<th><span class="dot" style="background:var(--${d})"></span>${LABEL[d]}</th>`).join("")+"</tr>";
+ RP.forEach((T,i)=>{h+=`<tr class="${T===100?"t100":""}"><td>${T} yr</td>`+DIST.map(d=>`<td>${fmt(r.res[d].q[r.idx[i]])}<small>${fmt(r.res[d].lo[r.idx[i]])} – ${fmt(r.res[d].hi[r.idx[i]])}</small></td>`).join("")+"</tr>"});
+ $("tbl").innerHTML=h;
+ $("plots").innerHTML=DIST.map(d=>`<div class="panel"><h3>${LABEL[d]}</h3><canvas id="cv${d}" role="img" aria-label="${LABEL[d]} frequency curve with ${conf}% confidence band"></canvas><p>KS ${r.res[d].stat.KS.toFixed(3)} · RMSE ${fmt(r.res[d].stat.RMSE)} ${u} · ${Object.entries(r.res[d].f.par).map(([k,v])=>k+" = "+(Math.abs(v)>=100?v.toFixed(1):v.toPrecision(3))).join(" · ")}</p></div>`).join("");
+ drawPlots();illSetup();
+}
+function drawPlots(){if(last)DIST.forEach(d=>{const cv=$("cv"+d);if(cv)plot(cv,[d],cssPal(),cv.clientWidth,cv.clientHeight,window.devicePixelRatio||1)})}
+
+/* frequency plot on a Gumbel reduced-variate axis; one distribution draws its confidence band, several draw a comparison */
+function plot(cv,dists,pal,W,H,dpr,title){
+ const{r}=last,res=r.res,single=dists.length===1;
+ cv.width=W*dpr;cv.height=H*dpr;const c=cv.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);
+ if(pal.bg){c.fillStyle=pal.bg;c.fillRect(0,0,W,H)}
+ const m={l:62,r:14,t:title?(single?34:52):(single?12:30),b:46},yv=T=>-Math.log(-Math.log(1-1/T)),x0=yv(1.02),x1=yv(500);
+ const vals=[...r.srt];dists.forEach(d=>{vals.push(...res[d].q.filter(isFinite));if(single)vals.push(...res[d].lo.filter(isFinite),...res[d].hi.filter(isFinite))});
+ let mn=Math.min(...vals),mx=Math.max(...vals);const raw=(mx-mn)/5,mag=Math.pow(10,Math.floor(Math.log10(raw))),step=mag*([1,2,5,10].find(k=>k*mag>=raw)||10);
+ mn=Math.floor(mn/step)*step;mx=Math.ceil(mx/step)*step;
+ const X=t=>m.l+(yv(t)-x0)/(x1-x0)*(W-m.l-m.r),Y=u=>H-m.b-(u-mn)/(mx-mn)*(H-m.t-m.b);
+ c.font="12px "+pal.font;c.lineWidth=1;c.fillStyle=pal.mute;c.strokeStyle=pal.rule;c.textAlign="right";
+ for(let u=mn;u<=mx+step/2;u+=step){c.beginPath();c.moveTo(m.l,Y(u));c.lineTo(W-m.r,Y(u));c.stroke();c.fillText(+u.toPrecision(6)+"",m.l-6,Y(u)+4)}
+ c.textAlign="center";RP.forEach(t=>{c.beginPath();c.moveTo(X(t),m.t);c.lineTo(X(t),H-m.b);c.stroke();c.fillText(t,X(t),H-m.b+16)});
+ c.fillText("Return period (years)",(m.l+W-m.r)/2,H-8);c.save();c.translate(14,(m.t+H-m.b)/2);c.rotate(-Math.PI/2);c.fillText(unitName(),0,0);c.restore();
+ dists.forEach(d=>{const col=pal[d],q=res[d].q;
+  if(single){c.globalAlpha=.2;c.fillStyle=col;c.beginPath();r.grid.forEach((t,i)=>i?c.lineTo(X(t),Y(res[d].hi[i])):c.moveTo(X(t),Y(res[d].hi[i])));for(let i=r.grid.length-1;i>=0;i--)c.lineTo(X(r.grid[i]),Y(res[d].lo[i]));c.fill();c.globalAlpha=1}
+  c.strokeStyle=col;c.lineWidth=2.2;c.beginPath();r.grid.forEach((t,i)=>i?c.lineTo(X(t),Y(q[i])):c.moveTo(X(t),Y(q[i])));c.stroke()});
+ c.fillStyle=pal.ink;r.srt.forEach((val,i)=>{c.beginPath();c.arc(X(1/(1-r.pp[i])),Y(val),3,0,7);c.fill()});
+ if(!single){let lx=m.l;c.textAlign="left";dists.forEach(d=>{c.fillStyle=pal[d];c.fillRect(lx,m.t-18,16,3);c.fillStyle=pal.ink;c.fillText(LABEL[d],lx+20,m.t-13);lx+=c.measureText(LABEL[d]).width+44});c.fillStyle=pal.ink;c.beginPath();c.arc(lx+4,m.t-16,3,0,7);c.fill();c.fillText("Observed",lx+12,m.t-13)}
+ if(title){c.fillStyle=pal.ink;c.font="600 15px "+pal.font;c.textAlign="left";c.fillText(title,m.l,20)}
+}
+
+/* ---------- flood illustration (magnitude only) ---------- */
+const ILL={dist:"Gumbel",ti:5,t:.3,playing:false,prev:0,phase:0,raf:0},TP=.3,reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const depth=(Q,Q2)=>Math.pow(Q/Q2,.6);
+const shape=t=>{const u=t/TP;return Math.pow(u*Math.exp(1-u),3)};
+function illSetup(){
+ const r=last.r,best=[...r.rows].filter(s=>isFinite(s.AIC)).sort((a,b)=>a.AIC-b.AIC)[0];
+ $("idist").innerHTML=DIST.map(d=>`<option value="${d}">${LABEL[d]}</option>`).join("");
+ ILL.dist=best?best.distribution:"Gumbel";$("idist").value=ILL.dist;ILL.ti=5;ILL.t=TP;ILL.playing=false;
+ $("iT").value=5;$("itime").value=TP*1000;$("play").textContent="Play";$("play").hidden=reduced;illRead();illDraw();
+}
+function illFlows(){const r=last.r,R=r.res[ILL.dist],at=k=>R.q[r.idx[k]];return{Qp:at(ILL.ti),Q2:at(0),Q10:at(2),Q100:at(5),Q500:at(7),lo:R.lo[r.idx[ILL.ti]],hi:R.hi[r.idx[ILL.ti]]}}
+function illQ(t,F){const Qb=.3*F.Q2;return Qb+(F.Qp-Qb)*shape(t)}
+function illRead(){
+ const F=illFlows(),T=RP[ILL.ti],u=unitName(),d=depth(F.Qp,F.Q2),conf=Math.round(last.r.conf*100);
+ $("iTl").textContent=T;
+ const txt=`${T}-year flood, ${LABEL[ILL.dist]} model: peak about ${fmt(F.Qp)} ${u} (${conf}% range ${fmt(F.lo)} to ${fmt(F.hi)}). `+(T===2?"The river is drawn just full to its banks.":`At the peak the water stands roughly ${d.toFixed(1)} times the bank-full depth.`);
+ $("readout").textContent=txt;$("ill").setAttribute("aria-label","Illustration: "+txt);
+}
+function illDraw(){
+ if(!last)return;const cv=$("ill"),pal=cssPal(),dpr=window.devicePixelRatio||1,W=cv.clientWidth,stack=W<640,H=stack?560:330;
+ cv.style.height=H+"px";cv.width=W*dpr;cv.height=H*dpr;const c=cv.getContext("2d");c.setTransform(dpr,0,0,dpr,0,0);c.font="12px "+pal.font;
+ const F=illFlows(),Q=illQ(ILL.t,F),u=unitName(),gap=18;
+ const A=stack?{x:0,y:0,w:W,h:H/2-gap/2}:{x:0,y:0,w:W*.5-gap/2,h:H},B=stack?{x:0,y:H/2+gap/2,w:W,h:H/2-gap/2}:{x:W*.5+gap/2,y:0,w:W*.5-gap/2,h:H};
+ // --- cross-section
+ const Dmax=depth(F.Q500,F.Q2),He=Math.max(Dmax*1.15,2),Ymax=He,pad=8,bot=A.y+A.h-26;
+ const sx=x=>A.x+pad+(x+15)/30*(A.w-2*pad),sy=y=>bot-(Math.min(y,Ymax)/Ymax)*(A.h-44);
+ const ground=x=>{const a=Math.abs(x);if(a<=1.5)return 0;if(a<=3)return(a-1.5)/1.5;if(a<=9)return 1+.04*(a-3);return 1.24+(He-1.24)*Math.pow((a-9)/6,2)};
+ const L=Math.min(depth(Q,F.Q2),Ymax),amp=.016*(1+Math.min(L,2)),k=.9;
+ c.save();c.beginPath();c.rect(A.x,A.y,A.w,A.h);c.clip();
+ c.fillStyle=pal.water;c.globalAlpha=.85;c.beginPath();
+ for(let x=-15;x<=15.001;x+=.25){const y=L+amp*Math.sin(k*x*2-ILL.phase),px=sx(x),py=sy(y);x===-15?c.moveTo(px,py):c.lineTo(px,py)}
+ c.lineTo(sx(15),bot+30);c.lineTo(sx(-15),bot+30);c.closePath();c.fill();c.globalAlpha=1;
+ c.fillStyle=pal.earth;c.beginPath();c.moveTo(sx(-15),bot+30);for(let x=-15;x<=15.001;x+=.25)c.lineTo(sx(x),sy(ground(x)));c.lineTo(sx(15),bot+30);c.closePath();c.fill();
+ c.strokeStyle=pal.mute;c.lineWidth=1.2;c.beginPath();for(let x=-15;x<=15.001;x+=.25){const px=sx(x),py=sy(ground(x));x===-15?c.moveTo(px,py):c.lineTo(px,py)}c.stroke();
+ c.setLineDash([4,4]);c.lineWidth=1;c.textAlign="left";c.fillStyle=pal.mute;c.strokeStyle=pal.mute;
+ [[F.Q2,"2-yr (bank-full)"],[F.Q10,"10-yr"],[F.Q100,"100-yr"]].forEach(([q,lab])=>{const dd=depth(q,F.Q2);if(dd<=Ymax){c.beginPath();c.moveTo(sx(-15),sy(dd));c.lineTo(sx(15),sy(dd));c.stroke();c.fillText(lab,sx(-14.6),sy(dd)-4)}});
+ c.setLineDash([]);c.restore();c.fillStyle=pal.mute;c.textAlign="left";c.fillText("River cross-section (looking downstream)",A.x+pad,A.y+14);
+ // --- hydrograph
+ const bm={l:56,r:10,t:26,b:34},gx=B.x+bm.l,gw=B.w-bm.l-bm.r,gy=B.y+bm.t,gh=B.h-bm.t-bm.b,Qm=F.Q500*1.05;
+ const hx=t=>gx+t*gw,hy=q=>gy+gh-q/Qm*gh;
+ c.strokeStyle=pal.rule;c.fillStyle=pal.mute;c.lineWidth=1;c.textAlign="right";
+ for(let i=0;i<=4;i++){const q=Qm*i/4;c.beginPath();c.moveTo(gx,hy(q));c.lineTo(gx+gw,hy(q));c.stroke();c.fillText(String(Qm>=100?Math.round(q):+q.toPrecision(2)),gx-6,hy(q)+4)}
+ c.textAlign="center";c.fillText("Time (illustrative)",gx+gw/2,B.y+B.h-6);c.save();c.translate(B.x+12,gy+gh/2);c.rotate(-Math.PI/2);c.fillText(u,0,0);c.restore();
+ c.textAlign="left";c.fillText("Flood hydrograph",gx,B.y+14);
+ c.setLineDash([4,4]);c.strokeStyle=pal.mute;[[F.Q2,"2-yr"],[F.Q10,"10-yr"],[F.Q100,"100-yr"]].forEach(([q,lab])=>{c.beginPath();c.moveTo(gx,hy(q));c.lineTo(gx+gw,hy(q));c.stroke();c.fillStyle=pal.mute;c.textAlign="right";c.fillText(lab,gx+gw-2,hy(q)-3)});c.setLineDash([]);
+ c.beginPath();for(let i=0;i<=120;i++){const t=i/120,x=hx(t),y=hy(illQ(t,F));i?c.lineTo(x,y):c.moveTo(x,y)}
+ c.lineTo(hx(1),hy(0));c.lineTo(hx(0),hy(0));c.closePath();c.globalAlpha=.18;c.fillStyle=pal.accent;c.fill();c.globalAlpha=1;
+ c.strokeStyle=pal.accent;c.lineWidth=2.2;c.beginPath();for(let i=0;i<=120;i++){const t=i/120,x=hx(t),y=hy(illQ(t,F));i?c.lineTo(x,y):c.moveTo(x,y)}c.stroke();
+ c.fillStyle=pal.ink;c.beginPath();c.arc(hx(ILL.t),hy(Q),5,0,7);c.fill();
+ c.textAlign="left";c.fillStyle=pal.ink;c.fillText(`now: ${fmt(Q)} ${u}`,Math.min(hx(ILL.t)+8,gx+gw-90),Math.max(hy(Q)-8,gy+10));
+}
+function illFrame(ts){
+ if(!ILL.playing)return;const dt=Math.min(.05,(ts-ILL.prev)/1000||0);ILL.prev=ts;
+ ILL.t=Math.min(1,ILL.t+dt/7);ILL.phase+=dt*(2+4*illQ(ILL.t,illFlows())/illFlows().Q2);$("itime").value=ILL.t*1000;illDraw();
+ if(ILL.t>=1){ILL.playing=false;$("play").textContent="Replay";return}ILL.raf=requestAnimationFrame(illFrame);
+}
+$("play").onclick=()=>{if(ILL.playing){ILL.playing=false;cancelAnimationFrame(ILL.raf);$("play").textContent="Play";return}
+ if(ILL.t>=1)ILL.t=0;ILL.playing=true;ILL.prev=performance.now();$("play").textContent="Pause";ILL.raf=requestAnimationFrame(illFrame)};
+$("iT").oninput=e=>{ILL.ti=+e.target.value;illRead();illDraw()};
+$("idist").onchange=e=>{ILL.dist=e.target.value;illRead();illDraw()};
+$("itime").oninput=e=>{ILL.t=e.target.value/1000;ILL.phase=ILL.t*40;illDraw()};
+
+/* ---------- downloads ---------- */
+function save(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+$("csv").onclick=()=>{const{r}=last;let s="distribution,return_period_yr,estimate,lower,upper\n";DIST.forEach(d=>RP.forEach((T,i)=>s+=`${LABEL[d]},${T},${r.res[d].q[r.idx[i]]},${r.res[d].lo[r.idx[i]]},${r.res[d].hi[r.idx[i]]}\n`));save(new Blob([s],{type:"text/csv"}),"return_periods.csv")};
+$("xlsx").onclick=()=>{
+ const{r,station,type}=last,unitLabel=type==="discharge"?"Discharge (m³/s)":"Rainfall (mm)",sheets=FF.workbookSheets(r,{station,unitLabel});
+ const fig=(dists,title)=>{const cv=document.createElement("canvas");plot(cv,dists,LIGHT,900,560,1,title);return XLSXMINI.dataUrlToBytes(cv.toDataURL("image/png"))};
+ const at=[[0,2],[10,2],[0,27],[10,27]],imgs=DIST.map((d,i)=>({data:fig([d],`${station?station+" – ":""}${LABEL[d]}`),col:at[i][0],row:at[i][1],w:600,h:373,alt:`${LABEL[d]} frequency curve`}));
+ imgs.push({data:fig(DIST,`${station?station+" – ":""}Distribution comparison`),col:0,row:52,w:600,h:373,alt:"Distribution comparison"});
+ sheets.push({name:"Figures",rows:[["Figures are embedded images. For editable native Excel charts use the Python command-line tool."]],colWidths:[64],images:imgs});
+ save(new Blob([XLSXMINI.build(sheets)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),"floodfreq_results.xlsx");
+};
+$("run").onclick=run;
+$("ex").onclick=()=>{$("data").value=EXAMPLE;$("station").value="Synthetic example";run()};
+addEventListener("resize",()=>{drawPlots();illDraw()});
+matchMedia("(prefers-color-scheme:dark)").addEventListener("change",()=>{drawPlots();illDraw()});
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+.idea/
+.vscode/
+# local analysis output (examples/results is tracked)
+/results/
+*.xlsx
+!examples/results/*.xlsx
